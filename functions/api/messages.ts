@@ -17,6 +17,7 @@ type MessageRow = {
   message: string;
   createdAt: string;
   isRead: number;
+  isArchived: number;
 };
 
 export const onRequest = async (context: PagesContext<InboxEnv>) => {
@@ -42,10 +43,13 @@ export const onRequest = async (context: PagesContext<InboxEnv>) => {
 
   if (request.method === "GET") {
     if (!(await hasValidSession(request, env.INBOX_SESSION_SECRET))) return json({ error: "يلزم تسجيل الدخول." }, { status: 401 });
+    const view = new URL(request.url).searchParams.get("view") === "archived" ? "archived" : "inbox";
+    const archivedFlag = view === "archived" ? 1 : 0;
     const { results } = await env.MESSAGES_DB
-      .prepare("SELECT id, sender_name AS senderName, subject, message, created_at AS createdAt, is_read AS isRead FROM messages ORDER BY created_at DESC LIMIT 500")
+      .prepare("SELECT m.id, m.sender_name AS senderName, m.subject, m.message, m.created_at AS createdAt, m.is_read AS isRead, COALESCE(s.is_archived, 0) AS isArchived FROM messages m LEFT JOIN message_state s ON s.message_id = m.id WHERE COALESCE(s.is_archived, 0) = ? ORDER BY m.created_at DESC LIMIT 500")
+      .bind(archivedFlag)
       .all<MessageRow>();
-    return json({ messages: results });
+    return json({ messages: results, view });
   }
 
   return json({ error: "الطريقة غير مدعومة." }, { status: 405, headers: { Allow: "GET, POST" } });

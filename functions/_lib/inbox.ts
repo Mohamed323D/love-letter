@@ -79,6 +79,10 @@ export function validateSubmission(payload: Record<string, unknown>): Submission
   return { senderName, subject, message };
 }
 
+export function isValidMessageId(value: string | string[] | undefined): value is string {
+  return typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
+}
+
 function toBase64Url(bytes: Uint8Array) {
   let binary = "";
   bytes.forEach((byte) => { binary += String.fromCharCode(byte); });

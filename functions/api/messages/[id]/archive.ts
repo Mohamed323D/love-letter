@@ -1,9 +1,9 @@
-/** Love Inbox API: Mido can mark a submitted message as read from the private dashboard. */
 import {
   hasConfiguration,
   hasValidSession,
   isValidMessageId,
   json,
+  readJson,
   type InboxEnv,
   type PagesContext,
   requireSameOrigin,
@@ -16,7 +16,14 @@ export const onRequestPatch = async (context: PagesContext<InboxEnv>) => {
   if (!(await hasValidSession(request, env.INBOX_SESSION_SECRET))) return json({ error: "يلزم تسجيل الدخول." }, { status: 401 });
 
   const id = context.params.id;
-  if (!isValidMessageId(id)) return json({ error: "رسالة غير صالحة." }, { status: 400 });
-  await env.MESSAGES_DB.prepare("UPDATE messages SET is_read = 1 WHERE id = ?").bind(id).run();
-  return json({ ok: true });
+  const payload = await readJson(request);
+  if (!isValidMessageId(id) || !payload || typeof payload.archived !== "boolean") return json({ error: "حالة الأرشفة غير صالحة." }, { status: 400 });
+
+  const archivedAt = payload.archived ? new Date().toISOString() : null;
+  await env.MESSAGES_DB
+    .prepare("INSERT INTO message_state (message_id, is_archived, archived_at) VALUES (?, ?, ?) ON CONFLICT(message_id) DO UPDATE SET is_archived = excluded.is_archived, archived_at = excluded.archived_at")
+    .bind(id, payload.archived ? 1 : 0, archivedAt)
+    .run();
+
+  return json({ ok: true, archived: payload.archived });
 };
