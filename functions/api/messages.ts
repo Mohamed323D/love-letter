@@ -20,16 +20,40 @@ type MessageRow = {
   isArchived: number;
 };
 
+const PREVIEW_SUBMISSION_ORIGIN = "https://lovepageher-brracizl.manus.space";
+
+function previewCorsHeaders(request: Request): Record<string, string> {
+  return request.headers.get("Origin") === PREVIEW_SUBMISSION_ORIGIN
+    ? { "Access-Control-Allow-Origin": PREVIEW_SUBMISSION_ORIGIN, Vary: "Origin" }
+    : {};
+}
+
+function acceptsPublicSubmission(request: Request) {
+  return requireSameOrigin(request) || request.headers.get("Origin") === PREVIEW_SUBMISSION_ORIGIN;
+}
+
 export const onRequest = async (context: PagesContext<InboxEnv>) => {
   const { request, env } = context;
   if (!hasConfiguration(env)) return json({ error: "Love Inbox لم يتم إعداده بعد." }, { status: 503 });
 
+  if (request.method === "OPTIONS" && request.headers.get("Origin") === PREVIEW_SUBMISSION_ORIGIN) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...previewCorsHeaders(request),
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+
   if (request.method === "POST") {
-    if (!requireSameOrigin(request)) return json({ error: "طلب غير مسموح." }, { status: 403 });
+    if (!acceptsPublicSubmission(request)) return json({ error: "طلب غير مسموح." }, { status: 403, headers: previewCorsHeaders(request) });
     const payload = await readJson(request);
-    if (!payload) return json({ error: "البيانات المرسلة غير صالحة." }, { status: 400 });
+    if (!payload) return json({ error: "البيانات المرسلة غير صالحة." }, { status: 400, headers: previewCorsHeaders(request) });
     const submission = validateSubmission(payload);
-    if ("error" in submission) return json({ error: submission.error }, { status: 400 });
+    if ("error" in submission) return json({ error: submission.error }, { status: 400, headers: previewCorsHeaders(request) });
 
     const id = crypto.randomUUID();
     const createdAt = new Date().toISOString();
@@ -38,7 +62,7 @@ export const onRequest = async (context: PagesContext<InboxEnv>) => {
       .bind(id, submission.senderName, submission.subject, submission.message, createdAt)
       .run();
 
-    return json({ ok: true, id, createdAt }, { status: 201 });
+    return json({ ok: true, id, createdAt }, { status: 201, headers: previewCorsHeaders(request) });
   }
 
   if (request.method === "GET") {
