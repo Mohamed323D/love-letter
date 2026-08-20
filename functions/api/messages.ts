@@ -22,21 +22,37 @@ type MessageRow = {
 
 const PREVIEW_SUBMISSION_ORIGIN = "https://lovepageher-brracizl.manus.space";
 
+function trustedPreviewOrigin(request: Request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return null;
+  if (origin === PREVIEW_SUBMISSION_ORIGIN) return origin;
+
+  try {
+    const previewUrl = new URL(origin);
+    return previewUrl.protocol === "https:" && previewUrl.hostname.endsWith(".manus.computer")
+      ? origin
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function previewCorsHeaders(request: Request): Record<string, string> {
-  return request.headers.get("Origin") === PREVIEW_SUBMISSION_ORIGIN
-    ? { "Access-Control-Allow-Origin": PREVIEW_SUBMISSION_ORIGIN, Vary: "Origin" }
+  const previewOrigin = trustedPreviewOrigin(request);
+  return previewOrigin
+    ? { "Access-Control-Allow-Origin": previewOrigin, Vary: "Origin" }
     : {};
 }
 
 function acceptsPublicSubmission(request: Request) {
-  return requireSameOrigin(request) || request.headers.get("Origin") === PREVIEW_SUBMISSION_ORIGIN;
+  return requireSameOrigin(request) || Boolean(trustedPreviewOrigin(request));
 }
 
 export const onRequest = async (context: PagesContext<InboxEnv>) => {
   const { request, env } = context;
   if (!hasConfiguration(env)) return json({ error: "Love Inbox لم يتم إعداده بعد." }, { status: 503 });
 
-  if (request.method === "OPTIONS" && request.headers.get("Origin") === PREVIEW_SUBMISSION_ORIGIN) {
+  if (request.method === "OPTIONS" && trustedPreviewOrigin(request)) {
     return new Response(null, {
       status: 204,
       headers: {
